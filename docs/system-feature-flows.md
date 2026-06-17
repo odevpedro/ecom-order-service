@@ -10,6 +10,9 @@
 - [Visao Geral da Arquitetura](#visao-geral-da-arquitetura)
 - [Convencoes deste Documento](#convencoes-deste-documento)
 - [Feature: Criação de Pedido (Orquestracao)](#feature-criacao-de-pedido-orquestracao)
+- [Feature: Circuit Breaker nos Clientes HTTP](#feature-circuit-breaker-nos-clientes-http)
+- [Feature: SAGA Compensatoria (Rollback)](#feature-saga-compensatoria-rollback)
+- [Feature: Retry com Backoff nos Clientes HTTP](#feature-retry-com-backoff-nos-clientes-http)
 - [Feature: Consulta de Pedido](#feature-consulta-de-pedido)
 
 ---
@@ -363,6 +366,225 @@ paymentClient.processPayment(order.getId(), totalCents);          // 3. pagament
 invoiceClient.issueInvoice(order.getId(), totalCents, "00000000000"); // 4. nota fiscal
 // tracking code gerado localmente                                 // 5. rastreio
 orderRepository.save(order);                                       // 6. persistencia
+```
+
+---
+
+---
+
+# Feature: Circuit Breaker nos Clientes HTTP
+
+> **Versao:** 1.0.0
+> **Implementada em:** 2026-06-17
+> **Status:** Concluida
+
+---
+
+## Resumo
+
+Cada cliente HTTP (ProductClient, UserClient, ShippingClient, PaymentClient, InvoiceClient) possui um circuit breaker resilience4j dedicado. Quando um servico downstream falha repetidamente, o circuito abre e o fallback stub e chamado imediatamente sem realizar a chamada HTTP, evitando cascata de falhas.
+
+**Motivacao:** Impedir que um servico downstream lento ou fora do ar consuma recursos do Order Service e bloqueie o fluxo de pedidos.
+**Resultado:** Cada servico downstream possui seu proprio circuit breaker configurado com sliding window de 10 chamadas, threshold de 50% de falha, wait de 10s em estado open e 3 chamadas em half-open.
+
+---
+
+## Configuracao
+
+- **Arquivo:** `src/main/java/com/ecom/order/config/ResilienceConfig.java`
+
+```java
+@Bean
+public CircuitBreakerRegistry circuitBreakerRegistry() {
+    CircuitBreakerConfig config = CircuitBreakerConfig.custom()
+            .slidingWindowSize(10)
+            .failureRateThreshold(50)
+            .waitDurationInOpenState(Duration.ofSeconds(10))
+            .permittedNumberOfCallsInHalfOpenState(3)
+            .build();
+    return CircuitBreakerRegistry.of(config);
+}
+```
+
+**application.yml:**
+```yaml
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      product: { base-config: default }
+      user: { base-config: default }
+      shipping: { base-config: default }
+      payment: { base-config: default }
+      invoice: { base-config: default }
+```
+
+---
+
+## Comportamento por Cliente
+
+| Circuit Breaker | Nome   | Fallback                           |
+|----------------|--------|------------------------------------|
+| ProductClient  | product | `fallbackGetProduct` → stubProduct |
+| UserClient     | user    | `fallbackGetUser` → stubUser       |
+| ShippingClient | shipping | `fallbackCalculateShipping` → stubShipping |
+| PaymentClient  | payment | `fallbackProcessPayment` → stubPayment |
+| InvoiceClient  | invoice | `fallbackIssueInvoice` → stubInvoice |
+
+---
+
+---
+
+# Feature: SAGA Compensatoria (Rollback)
+
+> **Versao:** 1.0.0
+> **Implementada em:** 2026-06-17
+> **Status:** Concluida
+
+---
+
+## Resumo
+
+O fluxo de criacao de pedido foi refatorado para usar o padrao SAGA Orchestrator com steps individuais. Cada step possui `execute()` e `compensate()`. Se um step falha apos steps anteriores terem sido concluidos, o `SagaCoordinator` executa `compensate()` em cada step completado em ordem reversa.
+
+**Motivacao:** Garantir consistencia eventual em cenarios de falha parcial — por exemplo, pagamento processado mas nota fiscal falha: o sistema estorna o pagamento automaticamente.
+**Resultado:** Rollback automatico de efeitos colaterais remotos sem necessidade de intervencao manual.
+
+---
+
+## Arquitetura
+
+**Pacote:** `src/main/java/com/ecom/order/service/saga/`
+
+| Componente       | Responsabilidade |
+|------------------|------------------|
+| `SagaStep`       | Interface com `execute(context)` e `compensate(context)` |
+| `SagaCoordinator` | Executa steps em ordem, chamando `compensate` em fallha |
+| `OrderContext`   | Objeto de contexto compartilhado entre steps |
+| `ValidateUserStep` | Valida usuario (read-only, sem compensate) |
+| `FetchProductsStep` | Busca produtos no catalogo (read-only) |
+| `CalculateShippingStep` | Calcula frete (read-only) |
+| `ProcessPaymentStep` | Processa pagamento; `compensate` faz refund |
+| `IssueInvoiceStep` | Emite nota fiscal; `compensate` cancela nota |
+
+---
+
+## Fluxo de Compensacao
+
+```
+1. ValidateUserStep.execute()          ✓
+2. FetchProductsStep.execute()         ✓
+3. CalculateShippingStep.execute()     ✓
+4. ProcessPaymentStep.execute()        ✓  (pagamento remoto criado)
+5. IssueInvoiceStep.execute()          ✗  (falha)
+
+   → SagaCoordinator compensa em reverso:
+     5'. ProcessPaymentStep.compensate() → refundPayment(paymentId)
+     4'. CalculateShippingStep.compensate() → no-op
+     3'. FetchProductsStep.compensate() → no-op
+     2'. ValidateUserStep.compensate() → no-op
+```
+
+---
+
+## Codigo
+
+**SagaCoordinator:**
+```java
+public void execute(OrderContext context) {
+    List<SagaStep> executed = new ArrayList<>();
+    for (SagaStep step : steps) {
+        try {
+            step.execute(context);
+            executed.add(step);
+        } catch (Exception e) {
+            compensate(executed, context);
+            throw new SagaExecutionException(...);
+        }
+    }
+}
+
+private void compensate(List<SagaStep> executed, OrderContext context) {
+    for (int i = executed.size() - 1; i >= 0; i--) {
+        try { executed.get(i).compensate(context); }
+        catch (Exception ignored) { }
+    }
+}
+```
+
+---
+
+---
+
+# Feature: Retry com Backoff nos Clientes HTTP
+
+> **Versao:** 1.0.0
+> **Implementada em:** 2026-06-17
+> **Status:** Concluida
+
+---
+
+## Resumo
+
+Cada metodo de cliente HTTP possui `@Retryable` do Spring Retry. Em caso de `ResourceAccessException` (conexao recusada, timeout de leitura), o metodo e reexecutado ate 3 vezes com intervalo de 2s entre tentativas. O `@CircuitBreaker` captura a excecao final e redireciona para o fallback stub.
+
+**Motivacao:** Falhas transientes de rede (conexao perdida, DNS temporario, restart de servico) sao recuperaveis sem afetar a experiencia do usuario.
+**Resultado:** Ate 3 tentativas com backoff de 2s antes de ativar o fallback stub.
+
+---
+
+## Configuracao
+
+**Dependencias:** `spring-retry`, `spring-boot-starter-aop`
+
+**Habilitacao:** `@EnableRetry` em `ResilienceConfig.java`
+
+---
+
+## Comportamento
+
+```
+Metodo chamado
+  → @CircuitBreaker check (circuito aberto? → fallback imediato)
+  → @Retryable (max 3 tentativas, backoff 2s)
+    → Tentativa 1: HTTP GET/POST
+      → Sucesso → retorna
+      → ResourceAccessException → aguarda 2s
+    → Tentativa 2: HTTP GET/POST
+      → Sucesso → retorna
+      → ResourceAccessException → aguarda 2s
+    → Tentativa 3: HTTP GET/POST
+      → Sucesso → retorna
+      → ResourceAccessException → propaga excecao
+  → @CircuitBreaker registra falha
+  → fallbackMethod retorna stub
+```
+
+---
+
+## Codigo
+
+**Exemplo (ProductClient):**
+```java
+@Retryable(
+    retryFor = { ResourceAccessException.class },
+    maxAttempts = 3,
+    backoff = @Backoff(delay = 2000)
+)
+@CircuitBreaker(name = "product", fallbackMethod = "fallbackGetProduct")
+public Map<String, Object> getProduct(String productId) {
+    String url = baseUrl + "/api/products/" + productId;
+    return rest.getForObject(url, Map.class);
+}
+
+private Map<String, Object> fallbackGetProduct(String productId, Exception e) {
+    return stubProduct(productId);
+}
 ```
 
 ---

@@ -1,7 +1,7 @@
 # Backlog — ecom-order-service
 
 > Registro vivo do progresso do projeto. Atualizado a cada mudança de estado de uma funcionalidade.
-> **Ultima atualizacao:** 2026-06-16
+> **Ultima atualizacao:** 2026-06-17
 
 ---
 
@@ -44,9 +44,6 @@ Nenhum item em andamento no momento.
 
 | Prioridade | Feature | Descricao |
 |------------|---------|-----------|
-| P1 | Rollback / compensacao em caso de falha | Implementar saga compensatoria para reverter pagamento e estorno quando um passo da orquestracao falhar apos confirmação parcial |
-| P1 | Circuit breaker nos clientes HTTP | Adicionar resilience4j para evitar cascata de falhas quando um servico downstream estiver fora |
-| P2 | Filas de retry para falhas temporarias | Incluir mecanismo de retry com backoff para falhas transientes de rede nos 5 clientes HTTP |
 | P3 | Eventos de dominio (mensageria) | Publicar eventos de mudanca de status do pedido (OrderCreated, OrderConfirmed, etc.) via RabbitMQ/Kafka |
 
 ---
@@ -67,6 +64,9 @@ Nenhum item em andamento no momento.
 | Listagem de pedidos por usuario | 2026-06-16 | GET /api/orders?userId= com ordenacao por createdAt DESC |
 | Validacao de entrada com Jakarta Validation | 2026-06-16 | @NotBlank, @NotEmpty, @Valid nos DTOs de criacao |
 | Suite de testes unitarios (3 cenarios) | 2026-06-16 | create, findById, findById not found throws — Mockito + JUnit 5 |
+| Circuit breaker nos clientes HTTP | 2026-06-17 | resilience4j com sliding window 10, threshold 50%, half-open 3, wait 10s |
+| SAGA compensatoria com rollback | 2026-06-17 | SagaCoordinator com 5 steps, compensacao reversa em caso de falha |
+| Retry com backoff nos clientes HTTP | 2026-06-17 | @Retryable com maxAttempts=3, backoff=2s, fallback stub |
 
 ---
 

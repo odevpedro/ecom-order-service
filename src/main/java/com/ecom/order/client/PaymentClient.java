@@ -1,8 +1,12 @@
 package com.ecom.order.client;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
@@ -19,19 +23,33 @@ public class PaymentClient {
         this.baseUrl = baseUrl;
     }
 
+    @Retryable(
+            retryFor = { ResourceAccessException.class },
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 2000)
+    )
+    @CircuitBreaker(name = "payment", fallbackMethod = "fallbackProcessPayment")
     @SuppressWarnings("unchecked")
     public Map<String, Object> processPayment(String orderId, int amountCents) {
+        String url = baseUrl + "/api/payments";
+        Map<String, Object> body = Map.of(
+            "orderId", orderId,
+            "amountCents", amountCents,
+            "currency", "BRL"
+        );
+        return rest.postForObject(url, new HttpEntity<>(body), Map.class);
+    }
+
+    public void refundPayment(String paymentId) {
         try {
-            String url = baseUrl + "/api/payments";
-            Map<String, Object> body = Map.of(
-                "orderId", orderId,
-                "amountCents", amountCents,
-                "currency", "BRL"
-            );
-            return rest.postForObject(url, new HttpEntity<>(body), Map.class);
-        } catch (Exception e) {
-            return stubPayment(orderId);
+            String url = baseUrl + "/api/payments/" + paymentId + "/refund";
+            rest.postForObject(url, HttpEntity.EMPTY, Map.class);
+        } catch (Exception ignored) {
         }
+    }
+
+    private Map<String, Object> fallbackProcessPayment(String orderId, int amountCents, Exception e) {
+        return stubPayment(orderId);
     }
 
     private Map<String, Object> stubPayment(String orderId) {

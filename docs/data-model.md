@@ -1,7 +1,7 @@
 # Data Model — ecom-order-service
 
 > Documento vivo do modelo de dados. Atualizado sempre que uma entidade for criada, alterada ou removida.
-> **Ultima atualizacao:** 2026-06-16
+> **Ultima atualizacao:** 2026-06-17
 
 ---
 
@@ -142,7 +142,7 @@ Usado em: `orders.status`
 | `DELIVERED` | Pedido entregue ao cliente |
 | `CANCELLED` | Pedido cancelado |
 
-**Observacao:** Atualmente o fluxo de criacao transiciona de `PENDING` -> `PAID` -> `CONFIRMED` em sequencia. Os demais status (`SHIPPING`, `DELIVERED`, `CANCELLED`) estao definidos mas ainda nao possuem implementacao de transicao.
+**Observacao:** O fluxo de criacao transiciona de `PENDING` -> `PAID` -> `CONFIRMED`. O status `CANCELLED` e definido para uso futuro em cenarios de rollback SAGA (compensacao).
 
 ---
 

@@ -17,18 +17,20 @@ Faz parte de um ecossistema **polyglot** de microserviços (Java/Spring Boot, Py
 
 ## Stack & Arquitetura
 
-| Camada        | Tecnologia                          |
-|---------------|--------------------------------------|
-| Runtime       | Java 21 (Temurin)                    |
-| Framework     | Spring Boot 3.4                      |
-| ORM           | Spring Data JPA / Hibernate          |
-| Clientes HTTP | RestTemplate + stub fallback         |
-| Validação     | Jakarta Validation                   |
-| Banco de dados| PostgreSQL 15                        |
-| Build         | Maven                                |
-| Infra         | Docker + Docker Compose              |
-| CI/CD         | GitHub Actions                       |
-| Testes        | JUnit 5 + Mockito                    |
+| Camada        | Tecnologia                                 |
+|---------------|---------------------------------------------|
+| Runtime       | Java 21 (Temurin)                           |
+| Framework     | Spring Boot 3.4                             |
+| ORM           | Spring Data JPA / Hibernate                 |
+| Clientes HTTP | RestTemplate + resilience4j CB + retry      |
+| Resiliência   | resilience4j (circuit breaker), Spring Retry |
+| SAGA          | SagaCoordinator com steps + compensação     |
+| Validação     | Jakarta Validation                          |
+| Banco de dados| PostgreSQL 15                               |
+| Build         | Maven                                       |
+| Infra         | Docker + Docker Compose                     |
+| CI/CD         | GitHub Actions                              |
+| Testes        | JUnit 5 + Mockito                           |
 
 > Padrão arquitetural: **SAGA Orchestrator**. O `OrderService` centraliza a orquestração chamando serviços downstream sequencialmente. Cada cliente HTTP encapsula a lógica de fallback stub.
 
@@ -42,7 +44,18 @@ src/main/java/com/ecom/order/
 ├── controller/
 │   ├── OrderController.java                  # POST create, GET by id/user
 │   └── HealthController.java                 # /health, /live, /ready
-├── service/OrderService.java                 # Orquestrador central
+├── service/
+│   ├── OrderService.java                     # Orquestrador central
+│   └── saga/
+│       ├── SagaStep.java                     # Interface execute/compensate
+│       ├── SagaCoordinator.java              # Orquestrador SAGA com rollback
+│       ├── OrderContext.java                 # Contexto entre steps
+│       ├── ValidateUserStep.java             # Step 1: valida usuário
+│       ├── FetchProductsStep.java            # Step 2: busca produtos
+│       ├── CalculateShippingStep.java        # Step 3: calcula frete
+│       ├── ProcessPaymentStep.java           # Step 4: processa pagamento
+│       ├── IssueInvoiceStep.java             # Step 5: emite nota fiscal
+│       └── SagaExecutionException.java       # Exceção de falha na SAGA
 ├── model/
 │   ├── Order.java                            # JPA Entity
 │   ├── OrderItem.java                        # JPA Entity
@@ -50,14 +63,15 @@ src/main/java/com/ecom/order/
 ├── repository/OrderRepository.java           # Spring Data JPA
 ├── dto/                                      # CreateOrderRequest, OrderResponse
 ├── client/
-│   ├── ProductClient.java                    # → product-catalog
-│   ├── UserClient.java                       # → user-service
-│   ├── ShippingClient.java                   # → shipping-service
-│   ├── PaymentClient.java                    # → payment-service
-│   └── InvoiceClient.java                    # → invoice-service
+│   ├── ProductClient.java                    # → product-catalog (CB + retry)
+│   ├── UserClient.java                       # → user-service (CB + retry)
+│   ├── ShippingClient.java                   # → shipping-service (CB + retry)
+│   ├── PaymentClient.java                    # → payment-service (CB + retry)
+│   └── InvoiceClient.java                    # → invoice-service (CB + retry)
 ├── config/
 │   ├── RequestIdFilter.java                  # X-Request-ID
-│   └── ErrorResponse.java                    # Erro padronizado
+│   ├── ErrorResponse.java                    # Erro padronizado
+│   └── ResilienceConfig.java                 # Circuit breaker + @EnableRetry
 └── exception/
     └── GlobalExceptionHandler.java            # @RestControllerAdvice
 ```
@@ -144,9 +158,9 @@ A API estará disponível em `http://localhost:3003`.
 [x] Status lifecycle: PENDING → CONFIRMED
 [x] JPA + PostgreSQL com ddl-auto=update
 [x] Health checks + Request ID + erro padronizado
-[ ] Rollback / compensação em caso de falha
-[ ] Circuit breaker nos clientes HTTP
-[ ] Filas de retry para falhas temporárias
+[x] Circuit breaker nos clientes HTTP (resilience4j)
+[x] Rollback / compensação SAGA
+[x] Retry com backoff nos clientes HTTP (Spring Retry)
 ```
 
 ---

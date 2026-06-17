@@ -21,3 +21,23 @@ services:
   payment: ${PAYMENT_SERVICE_URL:http://localhost:3004}
   shipping: ${SHIPPING_SERVICE_URL:http://localhost:3005}
   invoice: ${INVOICE_SERVICE_URL:http://localhost:3006}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      product:
+        base-config: default
+      user:
+        base-config: default
+      shipping:
+        base-config: default
+      payment:
+        base-config: default
+      invoice:
+        base-config: default

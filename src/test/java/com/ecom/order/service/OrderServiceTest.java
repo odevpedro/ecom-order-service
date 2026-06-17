@@ -6,6 +6,7 @@ import com.ecom.order.dto.OrderResponse;
 import com.ecom.order.model.Order;
 import com.ecom.order.model.OrderStatus;
 import com.ecom.order.repository.OrderRepository;
+import com.ecom.order.service.saga.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,9 +41,15 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(
-                orderRepository, productClient, userClient,
-                shippingClient, paymentClient, invoiceClient);
+        List<SagaStep> steps = List.of(
+                new ValidateUserStep(userClient),
+                new FetchProductsStep(productClient),
+                new CalculateShippingStep(shippingClient),
+                new ProcessPaymentStep(paymentClient),
+                new IssueInvoiceStep(invoiceClient)
+        );
+        SagaCoordinator sagaCoordinator = new SagaCoordinator(steps);
+        orderService = new OrderService(orderRepository, sagaCoordinator);
     }
 
     @Test
