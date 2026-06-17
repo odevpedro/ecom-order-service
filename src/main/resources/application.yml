@@ -2,6 +2,11 @@ server:
   port: ${PORT:3003}
 
 spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ecom_order}
     username: ${DATABASE_USER:ecom}
@@ -13,6 +18,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+rabbitmq:
+  enabled: ${RABBITMQ_ENABLED:true}
 
 services:
   cart: ${CART_SERVICE_URL:http://localhost:3002}

@@ -311,6 +311,126 @@ sequenceDiagram
 
 ---
 
+---
+
+# Feature: Publicacao de Eventos RabbitMQ
+
+> **Versao:** 1.0.0
+> **Implementada em:** 2026-06-17
+> **Status:** Concluida
+
+---
+
+## Resumo
+
+Apos a confirmacao de um pedido, o Order Service publica um evento no RabbitMQ para notificar outros servicos (Notification, Payment, etc.). A publicacao e feita de forma resiliente: se o RabbitMQ estiver indisponivel, o evento e ignorado com um warning e o fluxo do pedido continua normalmente.
+
+**Motivacao:** Desacoplar a notificacao de eventos de dominio (pedido confirmado) do processamento sincrono do pedido, permitindo que outros servicos reajam de forma assincrona.
+
+**Resultado:** Evento `order.confirmed` publicado na exchange `ecom.order` (topic) sempre que um pedido e confirmado, sem impactar a latencia ou disponibilidade do fluxo principal.
+
+---
+
+## Fluxo Principal
+
+### 1. Disparo
+
+- **Arquivo:** `src/main/java/com/ecom/order/service/OrderService.java:52`
+- **Momento:** Apos `orderRepository.save(order)`, antes de retornar `OrderResponse`
+
+O `OrderEventPublisher.publish()` e chamado com um `OrderEvent` contendo os dados do pedido confirmado.
+
+### 2. Publicacao
+
+- **Arquivo:** `src/main/java/com/ecom/order/messaging/OrderEventPublisher.java`
+
+```java
+rabbitTemplate.convertAndSend("ecom.order", "order.confirmed", event);
+```
+
+| Parametro | Valor |
+|-----------|-------|
+| Exchange | `ecom.order` (topic) |
+| Routing key | `order.confirmed` |
+| Payload | JSON serializado do `OrderEvent` |
+
+### 3. Estrutura do Evento
+
+- **Arquivo:** `src/main/java/com/ecom/order/messaging/OrderEvent.java`
+
+```json
+{
+  "eventType": "confirmed",
+  "orderId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "userId": "user-123",
+  "totalCents": 2500,
+  "timestamp": "2026-06-17T12:00:00"
+}
+```
+
+### 4. Resiliência
+
+A publicacao e envolvida em try-catch. Se o RabbitMQ estiver fora do ar ou a conexao falhar:
+
+```java
+try {
+    rabbitTemplate.convertAndSend(EXCHANGE, "order." + event.getEventType(), event);
+} catch (AmqpException e) {
+    log.warn("RabbitMQ unavailable — could not publish event {}: {}", event.getEventType(), e.getMessage());
+}
+```
+
+A exchange e a fila sao declaradas via beans condicionais em `RabbitConfig.java`. Se `rabbitmq.enabled=false`, os beans nao sao criados.
+
+---
+
+## Configuracao
+
+**application.yml:**
+```yaml
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+
+rabbitmq:
+  enabled: ${RABBITMQ_ENABLED:true}
+```
+
+---
+
+## Topologia de Mensageria
+
+```
+Exchange: ecom.order (topic)
+  ├── routing key: order.#
+  │   └── Queue: ecom.notification.order
+  │       └── Consumer: Notification Service
+  │
+  └── (futuro) routing key: payment.*
+      └── Queue: ecom.payment.order
+          └── Consumer: Payment Service
+```
+
+---
+
+## Decisoes Tecnicas
+
+### ADR-006 — Publicacao assincrona com fallback silencioso
+
+| Campo | Detalhe |
+|-------|---------|
+| **Status** | Aceita |
+| **Data** | 2026-06-17 |
+| **Contexto** | A publicacao de eventos nao deve comprometer a disponibilidade do fluxo de criacao de pedidos. Se o RabbitMQ estiver fora do ar, o pedido ja foi persistido e o usuario ja recebeu a resposta HTTP 201. |
+| **Decisao** | Capturar `AmqpException` no publisher e apenas logar warning. O pedido e criado independentemente do estado do RabbitMQ. |
+| **Alternativas consideradas** | Usar `@Transactional` com `RabbitTransactionManager` para garantir entrega atomica. Rejeitado por complexidade e por adicionar latencia ao fluxo principal. |
+| **Consequencias** | Perda de eventos se RabbitMQ estiver fora do ar. Aceitavel para o cenario de desenvolvimento. Para producao, pode-se adotar outbox pattern futuramente. |
+
+---
+
 ## Decisoes Tecnicas
 
 ### ADR-001 — SAGA Orchestrator vs Coreografia

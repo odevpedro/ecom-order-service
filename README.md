@@ -23,6 +23,7 @@ Faz parte de um ecossistema **polyglot** de microserviços (Java/Spring Boot, Py
 | Framework     | Spring Boot 3.4                             |
 | ORM           | Spring Data JPA / Hibernate                 |
 | Clientes HTTP | RestTemplate + resilience4j CB + retry      |
+| Mensageria    | RabbitMQ (spring-boot-starter-amqp)          |
 | Resiliência   | resilience4j (circuit breaker), Spring Retry |
 | SAGA          | SagaCoordinator com steps + compensação     |
 | Validação     | Jakarta Validation                          |
@@ -56,6 +57,9 @@ src/main/java/com/ecom/order/
 │       ├── ProcessPaymentStep.java           # Step 4: processa pagamento
 │       ├── IssueInvoiceStep.java             # Step 5: emite nota fiscal
 │       └── SagaExecutionException.java       # Exceção de falha na SAGA
+├── messaging/
+│   ├── OrderEvent.java                       # Evento de dominio (JSON payload)
+│   └── OrderEventPublisher.java              # Publica eventos no RabbitMQ
 ├── model/
 │   ├── Order.java                            # JPA Entity
 │   ├── OrderItem.java                        # JPA Entity
@@ -71,7 +75,8 @@ src/main/java/com/ecom/order/
 ├── config/
 │   ├── RequestIdFilter.java                  # X-Request-ID
 │   ├── ErrorResponse.java                    # Erro padronizado
-│   └── ResilienceConfig.java                 # Circuit breaker + @EnableRetry
+│   ├── ResilienceConfig.java                 # Circuit breaker + @EnableRetry
+│   └── RabbitConfig.java                     # Exchange/fila RabbitMQ (condicional)
 └── exception/
     └── GlobalExceptionHandler.java            # @RestControllerAdvice
 ```
@@ -103,6 +108,11 @@ A API estará disponível em `http://localhost:3003`.
 | `DATABASE_URL`            | URL JDBC do PostgreSQL               | `jdbc:postgresql://localhost:5432/ecom_order`           |
 | `DATABASE_USER`           | Usuário do banco                     | `ecom`                                                  |
 | `DATABASE_PASSWORD`       | Senha do banco                       | `ecom`                                                  |
+| `RABBITMQ_HOST`           | Host do RabbitMQ                      | `localhost`                                             |
+| `RABBITMQ_PORT`           | Porta do RabbitMQ                     | `5672`                                                  |
+| `RABBITMQ_USER`           | Usuario do RabbitMQ                   | `guest`                                                 |
+| `RABBITMQ_PASS`           | Senha do RabbitMQ                     | `guest`                                                 |
+| `RABBITMQ_ENABLED`        | Habilitar mensageria                  | `true`                                                  |
 | `PRODUCT_CATALOG_URL`     | URL do Product Catalog                | `http://localhost:3001`                                 |
 | `USER_SERVICE_URL`        | URL do User Service                   | `http://localhost:3007`                                 |
 | `PAYMENT_SERVICE_URL`     | URL do Payment Service                | `http://localhost:3004`                                 |
@@ -161,6 +171,7 @@ A API estará disponível em `http://localhost:3003`.
 [x] Circuit breaker nos clientes HTTP (resilience4j)
 [x] Rollback / compensação SAGA
 [x] Retry com backoff nos clientes HTTP (Spring Retry)
+[x] Eventos de dominio (RabbitMQ) — publica order.confirmed apos confirmacao
 ```
 
 ---

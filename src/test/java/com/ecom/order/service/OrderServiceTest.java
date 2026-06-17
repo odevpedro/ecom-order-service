@@ -3,6 +3,7 @@ package com.ecom.order.service;
 import com.ecom.order.client.*;
 import com.ecom.order.dto.CreateOrderRequest;
 import com.ecom.order.dto.OrderResponse;
+import com.ecom.order.messaging.OrderEventPublisher;
 import com.ecom.order.model.Order;
 import com.ecom.order.model.OrderStatus;
 import com.ecom.order.repository.OrderRepository;
@@ -36,6 +37,8 @@ class OrderServiceTest {
     private PaymentClient paymentClient;
     @Mock
     private InvoiceClient invoiceClient;
+    @Mock
+    private OrderEventPublisher eventPublisher;
 
     private OrderService orderService;
 
@@ -49,7 +52,7 @@ class OrderServiceTest {
                 new IssueInvoiceStep(invoiceClient)
         );
         SagaCoordinator sagaCoordinator = new SagaCoordinator(steps);
-        orderService = new OrderService(orderRepository, sagaCoordinator);
+        orderService = new OrderService(orderRepository, sagaCoordinator, eventPublisher);
     }
 
     @Test

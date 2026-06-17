@@ -34,7 +34,9 @@ API REST responsavel pela criacao e consulta de pedidos. Atua como orquestrador 
 
 > Features atualmente sendo desenvolvidas. Idealmente, maximo de 2–3 itens simultaneos.
 
-Nenhum item em andamento no momento.
+| Prioridade | Feature | Descricao | Inicio |
+|------------|---------|-----------|--------|
+| P3 | Eventos de dominio (mensageria) | Publicar eventos de mudanca de status do pedido via RabbitMQ — exchange `ecom.order`, routing keys `order.created` / `order.confirmed` | 2026-06-17 |
 
 ---
 
@@ -42,9 +44,7 @@ Nenhum item em andamento no momento.
 
 > Ordenadas por prioridade. Itens de P0 e P1 devem entrar em "Em Andamento" primeiro.
 
-| Prioridade | Feature | Descricao |
-|------------|---------|-----------|
-| P3 | Eventos de dominio (mensageria) | Publicar eventos de mudanca de status do pedido (OrderCreated, OrderConfirmed, etc.) via RabbitMQ/Kafka |
+Nenhum item pendente no momento.
 
 ---
 

@@ -2,6 +2,8 @@ package com.ecom.order.service;
 
 import com.ecom.order.dto.CreateOrderRequest;
 import com.ecom.order.dto.OrderResponse;
+import com.ecom.order.messaging.OrderEvent;
+import com.ecom.order.messaging.OrderEventPublisher;
 import com.ecom.order.model.Order;
 import com.ecom.order.model.OrderStatus;
 import com.ecom.order.repository.OrderRepository;
@@ -17,11 +19,14 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final SagaCoordinator sagaCoordinator;
+    private final OrderEventPublisher eventPublisher;
 
     public OrderService(OrderRepository orderRepository,
-                        SagaCoordinator sagaCoordinator) {
+                        SagaCoordinator sagaCoordinator,
+                        OrderEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.sagaCoordinator = sagaCoordinator;
+        this.eventPublisher = eventPublisher;
     }
 
     public OrderResponse create(CreateOrderRequest request) {
@@ -43,6 +48,9 @@ public class OrderService {
         order.setTrackingCode("TRACK" + order.getId().substring(0, 12).toUpperCase());
 
         Order saved = orderRepository.save(order);
+
+        eventPublisher.publish(new OrderEvent("confirmed", saved.getId(), saved.getUserId(), saved.getTotalCents()));
+
         return OrderResponse.fromEntity(saved);
     }
 
