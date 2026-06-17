@@ -1,19 +1,12 @@
 name: CI
-
-on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-
+on: [push, pull_request]
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          java-version: 21
-          distribution: temurin
-          cache: maven
-      - run: ./mvnw test
+        with: { distribution: temurin, java-version: 21 }
+      - run: ./mvnw verify -B
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
